@@ -19,27 +19,56 @@ It's built on [git-filter-repo](https://github.com/newren/git-filter-repo), the 
 ## How it works at a glance
 
 ```mermaid
-flowchart LR
-    subgraph TEST["Dry run: python3 git_history_purge.py test"]
-        direction LR
-        F["1 · fetch<br/>download every<br/>branch and tag"] --> FI["2 · find<br/>detect every<br/>secret value"]
-        FI --> R["3 · rewrite<br/>replace secrets in<br/>a copy of history"]
-        R --> V["4 · verify<br/>0 secrets left,<br/>nothing lost"]
-        V --> RE["5 · rehearse<br/>push to a local<br/>stand-in and recheck"]
-    end
-    RE --> P{{"6 · push<br/>you type PUSH"}}
-    P --> C["7 · cleanup<br/>delete local work copies"]
-    P --> RC(["Everyone re-clones<br/>and rotates secrets"])
+flowchart TD
+    START(["▶ python3 git_history_purge.py all --repo-url ‹your repo›"])
 
+    subgraph LOCAL["🖥️ On your machine · your real remote is not touched · this part is the test step"]
+        direction TB
+        F["📥 fetch<br/>Mirror every branch and tag"]
+        FI["🔍 find<br/>gitleaks + every old config file + your patterns"]
+        R["✂️ rewrite<br/>Replace each secret in a copy of the history"]
+        V["✅ verify<br/>0 secrets left · no branch lost · current files identical"]
+        RE["🧪 rehearse<br/>Real push code against a local stand-in, then check again"]
+        F --> FI --> R --> V --> RE
+    end
+
+    GATE{"Every check passed<br/>and nobody pushed since fetch?"}
+    STOP["⛔ STOP<br/>Nothing is pushed"]
+    PERM{"Your account can force-push<br/>to every branch and tag?"}
+    DENIED["⛔ Push refused<br/>Get the permission, run push again · it resumes"]
+    P["🚀 push · you type PUSH<br/>main first, then all branches, then all tags"]
+
+    subgraph TEAM["👥 Straight after the push"]
+        direction TB
+        RC["🔁 Everyone deletes their old clone and clones again"]
+        ROT["🔑 Rotate every removed secret"]
+        C["🧹 cleanup<br/>Delete the local work copies"]
+        RC --> ROT --> C
+    end
+
+    START --> F
+    RE --> GATE
+    GATE -- No --> STOP
+    GATE -- Yes --> PERM
+    PERM -- No --> DENIED
+    PERM -- Yes --> P
+    P --> RC
+
+    classDef start fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef safe fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef check fill:#ede7f6,stroke:#5e35b1,color:#311b92
+    classDef stop fill:#eceff1,stroke:#546e7a,color:#263238
     classDef danger fill:#ffebee,stroke:#c62828,color:#b71c1c
-    classDef after fill:#fff8e1,stroke:#f9a825,color:#5d4037
+    classDef critical fill:#fff3e0,stroke:#e65100,color:#bf360c
+    class START start
     class F,FI,R,V,RE safe
+    class GATE,PERM check
+    class STOP,DENIED stop
     class P danger
-    class C,RC after
+    class RC,ROT,C critical
 ```
 
-Everything in the green box runs on your machine and never touches your real remote. Only the red step changes the remote, and it won't run until the rehearsal has passed.
+Everything in the top box runs on your machine and never touches your real remote. Only the red step changes the remote. It won't run until every check and the rehearsal have passed, and it needs an account that's allowed to force-push.
 
 ### Contents
 
@@ -54,7 +83,7 @@ Everything in the green box runs on your machine and never touches your real rem
 
 ## Read this before you start
 
-There are three things to get right. Skip any of them and the purge won't protect you.
+There are four things to get right. Skip any of them and the purge won't protect you.
 
 ### 1. Move your secrets to a secrets manager first
 
@@ -85,6 +114,23 @@ Even after the purge, the old values still exist in:
 
 > [!CAUTION]
 > **Every commit ID changes.** Plan a short freeze, tell your team in advance, and make sure nobody pushes from an old clone afterwards. One push from an old clone puts every secret back on the remote. The steps for developers are in [After the purge](#after-the-purge-what-every-developer-does).
+
+### 4. You need force-push permission on every branch and tag
+
+> [!WARNING]
+> **The developer who runs the push must be allowed to force-push to every branch and tag, including protected ones like `main`.** Most hosts block this by default, so ask your repository admin to grant it *before* the purge day.
+> If the permission is missing, the push is refused. The script pushes `main` first, so a refusal there leaves the remote unchanged, and a refusal on a later branch resumes when you run `push` again. Either way, your team sits in the freeze while you wait for access.
+
+What to turn on, temporarily, for the account that pushes:
+
+| Host | Where |
+|---|---|
+| GitHub | Branch protection or rulesets: allow force pushes for that account, and lift any tag ruleset that blocks updates |
+| GitLab | Protected branches: allow force push, or temporarily unprotect the branches; same for protected tags |
+| Azure DevOps | Repository security: **Contribute**, **Force push (rewrite history, delete branches and tags)** and **Bypass policies when pushing** |
+| Bitbucket | Branch restrictions: allow **rewriting branch history** for that account |
+
+Turn the protection back on as soon as the push is done.
 
 ---
 
@@ -419,10 +465,14 @@ flowchart TB
 3. Run `test` and read the reports.
 4. Tell the team to push every branch, merge or close their open pull requests, and then stop pushing.
 5. Disable every CI/CD pipeline that deploys on push or tag. Otherwise the pushed tags could start deploys of old versions.
-6. Make sure the account that pushes is allowed to force-push to every branch, including protected ones:
+6. Make sure the account that pushes is allowed to force-push to every branch and tag, including protected ones:
    - **GitHub:** temporarily allow force pushes in branch protection or rulesets.
    - **GitLab:** temporarily unprotect the branches, or allow force push.
    - **Azure DevOps:** Contribute, Force push, and Bypass policies when pushing.
+   - **Bitbucket:** allow rewriting branch history in branch restrictions.
+
+> [!WARNING]
+> Check the force-push permission before the freeze starts. Without it, the push is refused and the team waits while you get access. See [You need force-push permission](#4-you-need-force-push-permission-on-every-branch-and-tag).
 
 ### Run
 
@@ -623,6 +673,9 @@ No. Values that are still on your current branch are kept, and the `verify` step
 
 **Why does everyone have to clone the repository again?**
 Rewriting history gives every commit a new ID. An old clone still holds the old commits, secrets included, and a single `git pull` or `git push` from it brings them back. Deleting old clones and cloning fresh is the only safe way.
+
+**What permissions do I need to run the purge?**
+Read access is enough for the dry run (`test`). The real push needs an account that can force-push to every branch and tag, including protected ones. On Azure DevOps that also means **Bypass policies when pushing**. See [You need force-push permission](#4-you-need-force-push-permission-on-every-branch-and-tag).
 
 **Do I still need to rotate the secrets?**
 Yes, always. Old clones, forks, pull request pages, CI caches and backups still hold the leaked values. A purge keeps your history clean; rotation makes the leaked values useless.
