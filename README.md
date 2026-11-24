@@ -1,13 +1,19 @@
 # Remove secrets from git history: passwords, API keys and .env files
 
+[![CI](https://github.com/BrienAustinClayton/remove-secrets-from-git-history/actions/workflows/ci.yml/badge.svg)](https://github.com/BrienAustinClayton/remove-secrets-from-git-history/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#install)
+
 **Did a `.env` file, a password or an API key end up in git?** It happens to almost every team. Deleting the file in a new commit doesn't help, because the secret is still in every earlier commit.
 
-`git_history_purge.py` finds every leaked secret across your **entire git history**, removes it from every commit, branch and tag, and then force-pushes the cleaned history to GitHub, GitLab, Azure DevOps, Bitbucket or any other git server. It checks its own work at every step before it touches your real remote.
+`git-history-purge` finds every leaked secret across your **entire git history**, removes it from every commit, branch and tag, and then force-pushes the cleaned history to GitHub, GitLab, Azure DevOps, Bitbucket or any other git server. It checks its own work at every step before it touches your real remote.
 
 - 🔍 **Finds the secrets for you.** It runs a gitleaks scan of the whole history, reads every old version of your `.env`, `.properties`, `.ini`, `.tfvars` and YAML config files, and applies any regex patterns you add.
 - 🛡️ **Safe by design.** A dry run, a verification step and a full push rehearsal against a local copy all happen before anything reaches your real remote.
 - ✅ **Keeps today's code working.** Values still used on your main branch are never replaced, and your current files stay byte-identical.
-- 📄 **One Python file, no config file.** Works on any repository in any language. The only thing it needs is the repository URL.
+- 📄 **No config file, no runtime dependencies.** Works on any repository in any language. The only thing it needs is the repository URL.
+- 🧩 **Small, readable codebase.** Pure Python standard library, one module per step, so you can check exactly what it does before you trust it with your repository.
 - 💻 **Cross-platform.** Runs on Windows, macOS and Linux.
 
 It's built on [git-filter-repo](https://github.com/newren/git-filter-repo), the tool the git project recommends instead of `git filter-branch`, and on [gitleaks](https://github.com/gitleaks/gitleaks).
@@ -20,7 +26,7 @@ It's built on [git-filter-repo](https://github.com/newren/git-filter-repo), the 
 
 ```mermaid
 flowchart TD
-    START(["▶ python3 git_history_purge.py all --repo-url ‹your repo›"])
+    START(["▶ git-history-purge all --repo-url ‹your repo›"])
 
     subgraph LOCAL["🖥️ On your machine · your real remote is not touched · this part is the test step"]
         direction TB
@@ -77,7 +83,7 @@ Everything in the top box runs on your machine and never touches your real remot
 - [Install](#install) · [Quick start](#quick-start) · [What it does](#what-it-does) · [Options](#options)
 - [Running the real purge](#running-the-real-purge) · [After the purge](#after-the-purge-what-every-developer-does)
 - [Compared with BFG Repo-Cleaner and plain git filter-repo](#compared-with-bfg-repo-cleaner-and-plain-git-filter-repo)
-- [FAQ](#faq)
+- [FAQ](#faq) · [Project structure](#project-structure) · [Contributing](#contributing) · [License](#license)
 
 ---
 
@@ -224,6 +230,28 @@ Check that everything is in place:
 python3 --version && git --version && git filter-repo --version && gitleaks version
 ```
 
+### Install git-history-purge
+
+The easiest way is [pipx](https://pipx.pypa.io/), which gives you a `git-history-purge` command in its own isolated environment:
+
+```
+pipx install git+https://github.com/BrienAustinClayton/remove-secrets-from-git-history.git
+```
+
+```
+git-history-purge --version
+```
+
+Prefer not to install anything? Clone the repository and run it as a module from the clone. Use `python3 -m git_history_purge` wherever this page says `git-history-purge`:
+
+```
+git clone https://github.com/BrienAustinClayton/remove-secrets-from-git-history.git
+```
+
+```
+cd remove-secrets-from-git-history && python3 -m git_history_purge --help
+```
+
 On Windows, use `python` instead of `python3` in every command on this page.
 
 ---
@@ -235,7 +263,7 @@ Replace `<repo-url>` with your repository URL. HTTPS, SSH and local paths all wo
 **1. Do a dry run.** It's safe and never changes your remote:
 
 ```
-python3 git_history_purge.py test --repo-url <repo-url>
+git-history-purge test --repo-url <repo-url>
 ```
 
 **2. Read the reports** in `purge-work/<repo-name>/reports/`. They list key names and value lengths only, never the values themselves.
@@ -243,19 +271,19 @@ python3 git_history_purge.py test --repo-url <repo-url>
 **3. Do the real run.** It runs the dry run again, then asks you to type `PUSH`:
 
 ```
-python3 git_history_purge.py all --repo-url <repo-url>
+git-history-purge all --repo-url <repo-url>
 ```
 
 **4. Delete the local work copies**, because they still contain the original secrets:
 
 ```
-python3 git_history_purge.py cleanup --repo-url <repo-url>
+git-history-purge cleanup --repo-url <repo-url>
 ```
 
 To see every option:
 
 ```
-python3 git_history_purge.py --help
+git-history-purge --help
 ```
 
 > [!TIP]
@@ -272,7 +300,7 @@ git clone --mirror --ref-format=reftable <repo-url> local-copy.git
 ```
 
 ```
-python3 git_history_purge.py all --repo-url local-copy.git
+git-history-purge all --repo-url local-copy.git
 ```
 
 ---
@@ -314,8 +342,8 @@ The script handles them in two ways:
 
 | Where the public value is | What the script does | Where in the script |
 |---|---|---|
-| Still in today's code (current branch) | **Kept automatically** in every commit, everywhere in history. Nothing to configure | the `keep_values_still_on_reference_branch` function |
-| Only in old versions of a file | **Replaced**, unless you tell the script to ignore that file | `DEFAULT_GITLEAKS_IGNORED_FILES` near the top of the script, or the `--gitleaks-ignored-files` option |
+| Still in today's code (current branch) | **Kept automatically** in every commit, everywhere in history. Nothing to configure | `keep_values_still_on_reference_branch` in [`detection/reference_branch.py`](git_history_purge/detection/reference_branch.py) |
+| Only in old versions of a file | **Replaced**, unless you tell the script to ignore that file | `DEFAULT_GITLEAKS_IGNORED_FILES` in [`defaults.py`](git_history_purge/defaults.py), or the `--gitleaks-ignored-files` option |
 
 ### Step by step
 
@@ -334,7 +362,7 @@ If you're not sure, treat it as a secret.
 **Step 2. Do a dry run and see what the script found.**
 
 ```
-python3 git_history_purge.py test --repo-url <repo-url>
+git-history-purge test --repo-url <repo-url>
 ```
 
 Then open these reports in `purge-work/<repo-name>/reports/`:
@@ -351,18 +379,18 @@ Only do this for files you're sure never held a real secret. Pick one of two way
 *Option 1 (recommended): pass the file on the command line.* The option replaces the default list, so include the lock files you use and add your file, here `next.config.*`:
 
 ```
-python3 git_history_purge.py test --repo-url <repo-url> --gitleaks-ignored-files "(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|next\.config\.(js|ts|mjs))$"
+git-history-purge test --repo-url <repo-url> --gitleaks-ignored-files "(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|next\.config\.(js|ts|mjs))$"
 ```
 
 To ignore several files, add them inside the brackets, separated by `|`:
 
 ```
-python3 git_history_purge.py test --repo-url <repo-url> --gitleaks-ignored-files "(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|next\.config\.(js|ts|mjs)|src/config/public\.ts)$"
+git-history-purge test --repo-url <repo-url> --gitleaks-ignored-files "(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|next\.config\.(js|ts|mjs)|src/config/public\.ts)$"
 ```
 
 Pass exactly the same option again when you run `all`.
 
-*Option 2: change the default in the script*, so you don't have to pass the option every time. Open `git_history_purge.py`, find `DEFAULT_GITLEAKS_IGNORED_FILES` near the top, and add your file to the last line of the list:
+*Option 2: change the default in your copy of the code*, so you don't have to pass the option every time. Open [`git_history_purge/defaults.py`](git_history_purge/defaults.py), find `DEFAULT_GITLEAKS_IGNORED_FILES`, and add your file to the last line of the list:
 
 ```
     r"|gradle\.lockfile|pubspec\.lock|Podfile\.lock|mix\.lock|next\.config\.(js|ts|mjs))$"
@@ -420,7 +448,7 @@ regexes = [
 ### Example with options
 
 ```
-python3 git_history_purge.py all --full --repo-url https://github.com/your-org/your-repo.git --replacement-text "[SECRET REMOVED FROM GIT {timestamp} - NOW IN SECRETS MANAGER]" --remove-path "dist/*" --extra-secret-pattern "sk_live_[A-Za-z0-9]{20,}"
+git-history-purge all --full --repo-url https://github.com/your-org/your-repo.git --replacement-text "[SECRET REMOVED FROM GIT {timestamp} - NOW IN SECRETS MANAGER]" --remove-path "dist/*" --extra-secret-pattern "sk_live_[A-Za-z0-9]{20,}"
 ```
 
 ---
@@ -477,7 +505,7 @@ flowchart TB
 ### Run
 
 ```
-python3 git_history_purge.py all --full --repo-url <repo-url>
+git-history-purge all --full --repo-url <repo-url>
 ```
 
 On a repository with ~9,000 commits, this takes about 10–15 minutes before it asks for `PUSH`.
@@ -660,7 +688,7 @@ git push --force <repo-url> "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*
 ## FAQ
 
 **How do I remove a `.env` file or a password from git history?**
-Move the secret to a secrets manager and delete it from your current code. Then run `python3 git_history_purge.py test --repo-url <repo-url>`, followed by `all`. Every old value is replaced in every commit, branch and tag.
+Move the secret to a secrets manager and delete it from your current code. Then run `git-history-purge test --repo-url <repo-url>`, followed by `all`. Every old value is replaced in every commit, branch and tag.
 
 **Isn't deleting the file in a new commit enough?**
 No. The secret stays in every earlier commit, and anyone with a clone can read it with `git log -p`. The history itself has to be rewritten.
@@ -682,3 +710,40 @@ Yes, always. Old clones, forks, pull request pages, CI caches and backups still 
 
 **Can I undo a purge?**
 Yes, if you made the mirror backup described in [Running the real purge](#running-the-real-purge). See [Rolling back](#rolling-back).
+
+---
+
+## Project structure
+
+The tool is a small Python package with one module per step of the process, so each part is easy to read on its own:
+
+```
+git_history_purge/
+├── cli.py                   command line: options and the step runner
+├── defaults.py              default patterns, replacement text, push checklists
+├── settings.py              options turned into one Settings object
+├── workspace.py             layout of the local work folder
+├── git.py                   thin wrappers around the git command line
+├── detection/               which values are secrets
+│   ├── rules.py             what counts as a secret value
+│   ├── sources.py           gitleaks, old config files, extra patterns and literals
+│   ├── reference_branch.py  values still in today's code are kept
+│   ├── ledger.py            every value found, with its source
+│   └── reports.py           reports with key names and lengths, never values
+├── safety.py                checks that guard the push
+├── pushing.py               the push sequence: main first, then branches, then tags
+└── steps/                   fetch, find, rewrite, verify, rehearse, push, cleanup
+```
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the pieces fit together, with diagrams.
+
+## Contributing
+
+Contributions are welcome, from typo fixes to new detection rules. Read [CONTRIBUTING.md](CONTRIBUTING.md) to set up a development environment and run the tests, and please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+> [!CAUTION]
+> Never paste real secrets, report files from `purge-work/` or private repository URLs into issues or pull requests. To report a security problem in the tool itself, follow [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)
