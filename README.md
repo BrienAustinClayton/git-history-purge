@@ -1,11 +1,23 @@
-# git_history_purge.py
+# git-history-purge: remove secrets, passwords and API keys from git history
 
-Remove leaked secrets (passwords, API keys, tokens, connection strings) from **every commit** of a git repository, then replace the history on its remote (GitHub, GitLab, Azure DevOps, Bitbucket, or any git server).
+**Committed a `.env` file, a password or an API key to git?** `git_history_purge.py` finds every leaked secret in your **entire git history**, removes it from every commit, branch and tag, and safely force-pushes the cleaned history to GitHub, GitLab, Azure DevOps, Bitbucket or any git server.
 
-- One Python file, no config file.
-- Runs on Windows, macOS and Linux.
-- Works on any repository; only the repository URL is required.
-- Rehearses the push against a local copy before it touches your real remote.
+- **Finds secrets automatically**: gitleaks scan of all history, every old version of `.env`, `.properties`, `.ini`, `.tfvars` and YAML config files, plus your own regex patterns.
+- **Safe by design**: dry run, verification and a full push rehearsal against a local copy before anything touches your real remote.
+- **Keeps today's code working**: values still used on your main branch are never replaced, and current files stay byte-identical.
+- **One Python file, no config file**: works on any repository and any language; only the repository URL is required.
+- **Cross-platform**: Windows, macOS and Linux.
+
+Built on [git-filter-repo](https://github.com/newren/git-filter-repo) (the tool the git project recommends instead of `git filter-branch`) and [gitleaks](https://github.com/gitleaks/gitleaks).
+
+### Contents
+
+- [Read this before you start](#️-read-this-before-you-start)
+- [Keeping secrets out of code: the secrets manager approach](#keeping-secrets-out-of-code-the-secrets-manager-approach)
+- [Install](#install) · [Quick start](#quick-start) · [What it does](#what-it-does) · [Options](#options)
+- [Running the real purge](#running-the-real-purge) · [After the purge](#after-the-purge-what-every-developer-does)
+- [Compared with BFG Repo-Cleaner and plain git filter-repo](#compared-with-bfg-repo-cleaner-and-plain-git-filter-repo)
+- [FAQ](#faq)
 
 ---
 
@@ -170,7 +182,7 @@ python3 git_history_purge.py all --repo-url local-copy.git
 | Step | What happens | Changes your remote? |
 |---|---|---|
 | `fetch` | Downloads every branch and tag. Drops read-only pull-request refs (`refs/pull/*`) | no |
-| `find` | Finds every secret value: gitleaks over all history, every old version of `.env*` and `*-config.yml` files, and your extra patterns. Values still on your current branch are kept | no |
+| `find` | Finds every secret value: gitleaks over all history, every old version of `.env`, `.properties`, `.ini`, `.cfg`, `.conf`, `.tfvars` and config-like YAML files (`*config*`, `*secret*`, `*settings*`, `application*`, `*credential*`, `values*`, `*compose*`), and your extra patterns. Values still on your current branch are kept | no |
 | `rewrite` | Rewrites a copy of the history with git-filter-repo: file contents and commit messages | no |
 | `verify` | Checks: 0 secret values left, no branch or tag lost, current branch files byte-identical | no |
 | `rehearse` | Pushes to a **local stand-in** with the real push code, clones it fresh and checks again | no |
@@ -262,7 +274,7 @@ DEFAULT_GITLEAKS_IGNORED_FILES = r"(pnpm-lock\.yaml|package-lock\.json|yarn\.loc
 
 Either way, run `test` again and check `gitleaks-findings.tsv`: that file's rows now say `ignored file`.
 
-A value is still replaced if it is *also* found somewhere else, for example in a `.env` file, a `*-config.yml` file, or by an `--extra-secret-pattern`. That is on purpose: a value sitting in a `.env` file next to real secrets is treated as a secret.
+A value is still replaced if it is *also* found somewhere else, for example in a `.env` file, a YAML or properties config file, or by an `--extra-secret-pattern`. That is on purpose: a value sitting in a `.env` file next to real secrets is treated as a secret.
 
 **Step 4. Stop gitleaks flagging public keys in future scans (optional).**
 The purge doesn't change how gitleaks scans your repo afterwards. Two ways to stop the noise:
@@ -299,10 +311,11 @@ Allowlist exact values only. Don't allowlist a whole prefix like `phc_` or a who
 | `--extra-literals-file` | File with one extra value to remove per line | none |
 | `--min-secret-length` | Shorter values are skipped as too risky to replace everywhere | `8` |
 | `--secret-key-pattern` | Regex for config keys that hold secrets | `PASSWORD`, `TOKEN`, `API_KEY`, `_KEY$`, ... |
-| `--config-file-pattern` | Regex for config files read in every old version | `.env*`, `*-config.yml` |
-| `--gitleaks-ignored-files` | Regex for files whose gitleaks findings are ignored | lock files |
+| `--config-file-pattern` | Regex for config files read in every old version | `.env*`, `*.env`, `*.properties`, `*.ini`, `*.cfg`, `*.conf`, `*.tfvars`, config-like `*.yml`/`*.yaml` |
+| `--gitleaks-ignored-files` | Regex for files whose gitleaks findings are ignored | lock files of npm, pnpm, yarn, bun, Cargo, Bundler, Poetry, Pipenv, uv, Composer, Go, NuGet, Gradle, Pub, CocoaPods, Mix |
 | `--drop-ref-prefix` | Read-only refs dropped after download (repeatable) | `refs/pull/` |
-| `--validation-file` / `--validation-config-dir` | Optional: stop if a secret key still used under the config folder is missing from the validation file | off |
+| `--validation-file` / `--validation-config-dir` | Optional: stop if a secret key still used under the config folder is missing from the validation file (for example your env schema or `.env.example`) | off |
+| `--validation-key-pattern` | Regex capturing key names in the validation file | every `UPPER_CASE` name |
 | `--allow-unvalidated-keys` | Continue past that check anyway | off |
 | `--full` | `verify` also re-runs gitleaks (slower) | off |
 | `--work-dir` | Work folder | `./purge-work/<repo-name>` |
@@ -477,3 +490,38 @@ git push --force <repo-url> "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*
 - Add a gitleaks check to your pull-request pipeline, so a secret is caught before it is merged.
 - Turn on your host's push protection or secret scanning if it has one.
 - Treat any secret that reached git as leaked: rotate it right away, even if you delete the commit.
+
+---
+
+## Compared with BFG Repo-Cleaner and plain git filter-repo
+
+| | git-history-purge | BFG Repo-Cleaner | git filter-repo by hand |
+|---|---|---|---|
+| Finds the secrets for you | Yes: gitleaks + every old config file version + your patterns | No, you list them | No, you list them |
+| Protects values still used on your main branch | Yes, automatically | Protects the latest commit only | No |
+| Verifies nothing was lost (branches, tags, current files) | Yes | No | No |
+| Rehearses the force-push on a local copy first | Yes | No | No |
+| Refuses to push if someone pushed meanwhile | Yes | No | No |
+| Needs | Python, git, git-filter-repo, gitleaks | Java | Python, git-filter-repo |
+
+---
+
+## FAQ
+
+**How do I remove a `.env` file or a password from git history?**
+Move the secret to a secrets manager, delete it from your current code, then run `python3 git_history_purge.py test --repo-url <repo-url>` followed by `all`. Every old value is replaced in every commit, branch and tag.
+
+**Is deleting the file in a new commit enough?**
+No. The secret stays in every earlier commit, and anyone with a clone can read it with `git log -p`. The history itself has to be rewritten.
+
+**Does this work with GitHub, GitLab, Azure DevOps and Bitbucket?**
+Yes. It works with any git remote over HTTPS or SSH, and with local paths for testing.
+
+**Will it break my application?**
+No. Values that are still in your current branch are kept, and the `verify` step checks that every current file is byte-identical before anything is pushed.
+
+**Do I still need to rotate the secrets?**
+Yes, always. Old clones, forks, pull request pages, CI caches and backups still hold the leaked values. A purge keeps your history clean; rotation makes the leaked values useless.
+
+**Can I undo a purge?**
+Yes, if you made the mirror backup described in [Running the real purge](#running-the-real-purge). See [Rolling back](#rolling-back).
