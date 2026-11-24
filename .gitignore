@@ -1,0 +1,7 @@
+purge-work/
+work/
+*.git/
+*.log
+*literals*.txt
+__pycache__/
+.DS_Store
