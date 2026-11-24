@@ -39,8 +39,16 @@ DEFAULT_SECRET_KEY_PATTERN = (
     r"(SECRET(_KEY)?$|PASSWORD|PASSWD|(^|_)TOKEN($|_)|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY"
     r"|KEY_ID|CLIENT_ID|DSN$|DATABASE_URL|_KEY$|[a-z](Key|Token|Secret)$)"
 )
-DEFAULT_CONFIG_FILE_PATTERN = r"(^|/)(\.env[^/]*|[^/]*-config\.ya?ml)$"
-DEFAULT_GITLEAKS_IGNORED_FILES = r"(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$"
+DEFAULT_CONFIG_FILE_PATTERN = (
+    r"(^|/)(\.env[^/]*|[^/]*\.env|[^/]*\.(properties|ini|cfg|conf|tfvars)"
+    r"|[^/]*(config|secret|setting|application|credential|values|compose)[^/]*\.ya?ml)$"
+)
+DEFAULT_GITLEAKS_IGNORED_FILES = (
+    r"(^|/)(pnpm-lock\.yaml|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|bun\.lockb?|Cargo\.lock"
+    r"|Gemfile\.lock|poetry\.lock|Pipfile\.lock|uv\.lock|composer\.lock|go\.sum|packages\.lock\.json"
+    r"|gradle\.lockfile|pubspec\.lock|Podfile\.lock|mix\.lock)$"
+)
+DEFAULT_VALIDATION_KEY_PATTERN = r"\b([A-Z][A-Z0-9_]*[A-Z0-9])\b"
 DEFAULT_REPLACEMENT = "[SECRET REMOVED FROM GIT {timestamp}]"
 DEFAULT_BEFORE_PUSH_CHECKLIST = [
     "Every secret the apps still need lives in a secrets manager (AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, Vault, ...) and the apps read it from there",
@@ -680,7 +688,7 @@ def step_find(settings: Settings, workspace: Workspace) -> None:
     collect_from_gitleaks(ledger, findings, settings)
     ok(f"gitleaks findings: {len(findings)}")
 
-    say("Reading every old version of config files (.env, *-config.yml, ...)")
+    say("Reading every old version of config files (.env, .properties, config YAML, ...)")
     ok(f"config file versions read: {collect_from_config_files(ledger, workspace.original, settings)}")
 
     say("Searching history for extra patterns and adding extra literals")
@@ -852,8 +860,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--replacement-text", default=DEFAULT_REPLACEMENT, help="text that replaces each secret; {timestamp} is filled in")
     parser.add_argument("--timezone-offset", default="+00:00", help="timezone of {timestamp}, e.g. +05:30 (default: +00:00)")
     parser.add_argument("--timezone-label", default="UTC", help="label after {timestamp}, e.g. IST (default: UTC)")
-    parser.add_argument("--remove-path", action="append", default=[], help="glob deleted from every commit, e.g. 'apps/*/.next/*' (repeatable)")
-    parser.add_argument("--extra-secret-pattern", action="append", default=[], help="regex searched in every diff, e.g. 'sntry[su]_[A-Za-z0-9_=+/-]{20,}' (repeatable)")
+    parser.add_argument("--remove-path", action="append", default=[], help="glob deleted from every commit, e.g. 'dist/*' or 'node_modules/*' (repeatable)")
+    parser.add_argument("--extra-secret-pattern", action="append", default=[], help="regex searched in every diff, e.g. 'sk_live_[A-Za-z0-9]{20,}' (repeatable)")
     parser.add_argument("--extra-literals-file", default="", help="file with one extra value to remove per line")
     parser.add_argument("--min-secret-length", type=int, default=8, help="shorter values are skipped (default: 8)")
     parser.add_argument("--secret-key-pattern", default=DEFAULT_SECRET_KEY_PATTERN, help="regex for config keys that hold secrets")
@@ -861,7 +869,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gitleaks-ignored-files", default=DEFAULT_GITLEAKS_IGNORED_FILES, help="regex for files whose gitleaks hits are ignored")
     parser.add_argument("--drop-ref-prefix", action="append", default=[], help="read-only refs dropped after download (default: refs/pull/)")
     parser.add_argument("--validation-file", default="", help="optional: file listing validated env keys; rewrite stops if a live secret key is missing from it")
-    parser.add_argument("--validation-key-pattern", default=r"^\s+([A-Z0-9_]+)!?:", help="regex capturing key names in --validation-file")
+    parser.add_argument("--validation-key-pattern", default=DEFAULT_VALIDATION_KEY_PATTERN, help="regex capturing key names in --validation-file (default: every UPPER_CASE name)")
     parser.add_argument("--validation-config-dir", default="", help="folder whose config files hold the live keys for --validation-file")
     parser.add_argument("--allow-unvalidated-keys", action="store_true", help="continue although live secret keys are not in --validation-file")
     parser.add_argument("--full", action="store_true", help="verify: also re-run gitleaks on the rewritten copy (slow)")
