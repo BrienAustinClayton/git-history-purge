@@ -5,3 +5,9 @@ work/
 *literals*.txt
 __pycache__/
 .DS_Store
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
