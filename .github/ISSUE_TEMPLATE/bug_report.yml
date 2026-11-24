@@ -1,0 +1,62 @@
+name: Bug report
+description: Something did not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+        Please do not paste real secrets, values from report files, or private URLs. Use fake values instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran, with URLs and values replaced by fake ones.
+      placeholder: |
+        1. git-history-purge fetch --repo-url https://example.com/org/repo.git
+        2. git-history-purge find --repo-url https://example.com/org/repo.git
+    validations:
+      required: true
+  - type: textarea
+    id: stop-message
+    attributes:
+      label: The [STOP] message
+      description: If the tool stopped with a message that starts with [STOP], paste it here.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: git-history-purge version
+      description: Output of `git-history-purge --version`.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15, Windows 11, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: tool-versions
+    attributes:
+      label: git, gitleaks and git-filter-repo versions
+      description: Output of `git --version`, `gitleaks version` and `git-filter-repo --version`.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed every secret value, token and private URL from this report
+          required: true
