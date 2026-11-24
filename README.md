@@ -1,4 +1,4 @@
-# git-history-purge: remove secrets, passwords and API keys from git history
+# Remove secrets from git history: passwords, API keys and .env files
 
 **Did a `.env` file, a password or an API key end up in git?** It happens to almost every team. Deleting the file in a new commit doesn't help, because the secret is still in every earlier commit.
 
@@ -646,7 +646,7 @@ git push --force <repo-url> "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*
 
 ## Compared with BFG Repo-Cleaner and plain git filter-repo
 
-| | git-history-purge | BFG Repo-Cleaner | git filter-repo by hand |
+| | remove-secrets-from-git-history | BFG Repo-Cleaner | git filter-repo by hand |
 |---|---|---|---|
 | Finds the secrets for you | Yes: gitleaks + every old config file version + your patterns | No, you list them | No, you list them |
 | Protects values still used on your main branch | Yes, automatically | Protects the latest commit only | No |
